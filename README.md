@@ -1,6 +1,6 @@
 Load balancing and DDoS detection SDN
 ## Project Structure:
-.
+|
 ├── topology/ # Mininet topology
 ├── controller/ # Ryu controller (load balancing + DDoS detection)
 ├── benchmark/ # Server & benchmarking scripts
