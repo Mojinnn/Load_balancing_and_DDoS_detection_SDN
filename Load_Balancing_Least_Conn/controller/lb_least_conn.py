@@ -12,7 +12,7 @@ import time
 import json
 import os
 
-# ── Virtual IP (VIP) — địa chỉ duy nhất client kết nối ──
+# ── Virtual IP (VIP) ──
 VIRTUAL_IP  = '10.0.0.100'
 VIRTUAL_MAC = '00:00:00:00:01:00'
 
@@ -91,12 +91,10 @@ class LeastConnLB(app_manager.RyuApp):
         return self.mac_to_port.get(dpid, {}).get(mac)
 
     def _pick_server(self):
-        """Chọn server có active connection thấp nhất — Least Connection."""
         return min(SERVER_POOL,
                    key=lambda s: self.conn_count[s['ip']])
 
     def _save_stats(self):
-        """Lưu stats ra file JSON để visualize đọc."""
         stats = {
             'conn_count':  dict(self.conn_count),
             'total_req':   dict(self.total_req),
@@ -123,13 +121,12 @@ class LeastConnLB(app_manager.RyuApp):
         self.datapaths[dp.id] = dp
         self.logger.info(f"[SW] Connected: dpid={dp.id}")
 
-        # Table-miss: gửi lên controller
+        # Table-miss
         match   = parser.OFPMatch()
         actions = [parser.OFPActionOutput(
                        ofp.OFPP_CONTROLLER, ofp.OFPCML_NO_BUFFER)]
         self.add_flow(dp, priority=0, match=match, actions=actions)
 
-        # Drop LLDP trực tiếp trên switch (priority=1, không action)
         lldp_match = parser.OFPMatch(eth_type=0x88cc)
         self.add_flow(dp, priority=1, match=lldp_match, actions=[])
 
@@ -148,7 +145,7 @@ class LeastConnLB(app_manager.RyuApp):
         if not eth:
             return
 
-        # Bỏ qua LLDP, STP, mDNS
+        # Bypass LLDP, STP, mDNS
         if eth.ethertype == 0x88cc:
             return
         if eth.dst in ('01:80:c2:00:00:00', '01:00:5e:00:00:fb'):
@@ -178,7 +175,7 @@ class LeastConnLB(app_manager.RyuApp):
         src_port  = tcp4.src_port
         tcp_flags = tcp4.bits
 
-        # Traffic không đến VIP → forward bình thường
+        # Traffic can not reach VIP → forward normally
         if dst_ip != VIRTUAL_IP:
             dst_mac  = eth.dst
             out_port = self._get_port(dpid, dst_mac)
@@ -190,7 +187,7 @@ class LeastConnLB(app_manager.RyuApp):
         session_key = (src_ip, src_port)
         FIN = 0x01; RST = 0x04
 
-        # ── FIN/RST: đóng session ──
+        # ── FIN/RST: end session ──
         if tcp_flags & (FIN | RST):
             if session_key in self.session_map:
                 server = self.session_map.pop(session_key)
@@ -202,7 +199,7 @@ class LeastConnLB(app_manager.RyuApp):
                 self._save_stats()
             return
 
-        # ── SYN: session mới → chọn server Least Connection ──
+        # ── SYN: new session → pick server Least Connection ──
         t0 = time.time()
         if session_key not in self.session_map:
             server = self._pick_server()
@@ -228,7 +225,7 @@ class LeastConnLB(app_manager.RyuApp):
         srv_ip  = server['ip']
         srv_mac = server['mac']
 
-        # Tìm port đến server
+        # Find port reach server
         out_port = self._get_port(dpid, srv_mac)
         if out_port is None:
             self.logger.warning(
@@ -238,7 +235,7 @@ class LeastConnLB(app_manager.RyuApp):
                               data)
             return
 
-        # ── Cài flow client→server (DNAT) ──
+        # ── Install flow client to server (DNAT) ──
         match_c2s = parser.OFPMatch(
             in_port=in_port, eth_type=0x0800, ip_proto=6,
             ipv4_src=src_ip, ipv4_dst=VIRTUAL_IP,
@@ -251,7 +248,7 @@ class LeastConnLB(app_manager.RyuApp):
         self.add_flow(dp, priority=10, match=match_c2s,
                       actions=actions_c2s, idle_timeout=30)
 
-        # ── Cài flow server→client (SNAT) ──
+        # ── Install flow server to client (SNAT) ──
         match_s2c = parser.OFPMatch(
             eth_type=0x0800, ip_proto=6,
             ipv4_src=srv_ip, ipv4_dst=src_ip, tcp_dst=src_port)
@@ -267,7 +264,6 @@ class LeastConnLB(app_manager.RyuApp):
             f"[LC] Flow installed dpid={dpid}: "
             f"{src_ip}:{src_port} → {srv_ip} port={out_port}")
 
-        # Gửi packet hiện tại ra ngay
         self.send_pkt_out(dp, in_port, actions_c2s, data)
 
     # ─────────────────────────────────────────────────────
@@ -286,10 +282,9 @@ class LeastConnLB(app_manager.RyuApp):
 
         if (arp_pkt.opcode != arp.ARP_REQUEST
                 or arp_pkt.dst_ip != VIRTUAL_IP):
-            # Flood để học, rồi cài flow ARP forward để không bão nữa
+            
             out_port = self._get_port(dp.id, eth_pkt.dst)
             if out_port:
-                # Biết port rồi → cài flow luôn
                 match = parser.OFPMatch(
                     eth_type=0x0806,
                     eth_dst=eth_pkt.dst)
@@ -301,7 +296,7 @@ class LeastConnLB(app_manager.RyuApp):
                           data)
             return
 
-        # Trả lời ARP: VIP → VIRTUAL_MAC
+        # Reply ARP: VIP to VIRTUAL_MAC
         e = ethernet.ethernet(
             dst=eth_pkt.src, src=VIRTUAL_MAC, ethertype=0x0806)
         a = arp.arp(

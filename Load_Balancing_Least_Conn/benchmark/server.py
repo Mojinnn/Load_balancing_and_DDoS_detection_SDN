@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-"""
-HTTP server nhận diện được — phục vụ cả file nhỏ lẫn file lớn
-Chạy trong Mininet:
-  mininet> h1 python3 benchmark/server.py 10.0.0.1 h1 &
-"""
-
 import http.server, sys, os, time, socket
 
 SERVER_IP   = sys.argv[1] if len(sys.argv) > 1 else '10.0.0.1'
@@ -12,18 +5,17 @@ SERVER_NAME = sys.argv[2] if len(sys.argv) > 2 else 'h?'
 PORT        = 80
 TEST_FILE   = '/tmp/testfile_10mb'
 
-# Tạo file test 10MB nếu chưa có
 if not os.path.exists(TEST_FILE):
-    print(f'[{SERVER_NAME}] Tạo file test 10MB...')
+    print(f'[{SERVER_NAME}] Create file test 10MB...')
     with open(TEST_FILE, 'wb') as f:
         f.write(os.urandom(10 * 1024 * 1024))
-    print(f'[{SERVER_NAME}] File test sẵn sàng.')
+    print(f'[{SERVER_NAME}] File test is ready.')
 
 
 class IdentifiableHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
-        # Serve file lớn để đo bandwidth
+        # Serve large file to measure bandwidth
         if self.path == '/testfile_10mb' or self.path == '/testfile_10mb/':
             try:
                 with open(TEST_FILE, 'rb') as f:
@@ -40,7 +32,6 @@ class IdentifiableHandler(http.server.BaseHTTPRequestHandler):
                 self.end_headers()
             return
 
-        # Serve trang HTML nhỏ với IP nhận diện
         body = (
             f'<html><body>'
             f'<h2>Server: {SERVER_NAME} ({SERVER_IP})</h2>'
@@ -58,7 +49,7 @@ class IdentifiableHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, format, *args):
-        pass  # Tắt log noise
+        pass
 
 
 if __name__ == '__main__':

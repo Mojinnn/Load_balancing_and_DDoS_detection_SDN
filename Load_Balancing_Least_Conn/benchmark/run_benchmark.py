@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""
-Benchmark — So sánh CÓ LB vs KHÔNG LB
-Chạy trong Mininet: mininet> c1 python3 benchmark/run_benchmark.py [n_requests]
-
-Cách đo đúng:
-- CÓ LB:    gửi đến VIP 10.0.0.100 (Ryu phân phối Least Connection)
-- KHÔNG LB: gửi thẳng đến h1 10.0.0.1 (Ryu vẫn chạy, chỉ không qua VIP)
-- Không bao giờ tắt Ryu trong lúc test
-
-Kết quả lưu vào: visualize/results/<timestamp>/
-"""
-
 import subprocess, threading, time, json, sys, os, socket
 from datetime import datetime
 from collections import defaultdict
