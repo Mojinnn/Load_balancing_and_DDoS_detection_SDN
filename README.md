@@ -1,4 +1,4 @@
-# How to Run:
+# How to Run DDoS:
 1. Start the SDN Controller
 ```bash
 ryu-manager controller.py
