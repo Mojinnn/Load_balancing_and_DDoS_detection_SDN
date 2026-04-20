@@ -7,7 +7,11 @@ ryu-manager controller.py
 ```bash
 sudo python topology.py
 ```
-3. Attack
+3. Ping (Mininet)
+```bash
+h1 ping h2
+```
+4. Attack
 ```bash
 # ICMP flood
 hping3 -1 -V -d 120 -w 64 -p 80 --rand-source --flood 10.0.0.1
