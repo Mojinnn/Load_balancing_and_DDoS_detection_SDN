@@ -1,4 +1,4 @@
-How to Run
+# How to Run:
 1. Start the SDN Controller
 ```bash
 ryu-manager controller.py
@@ -25,10 +25,8 @@ hping3 -S -V -d 120 -w 64 -p 80 --rand-source --flood 10.0.0.1
 # TCP flood
 hping3 -A -V -d 120 -w 64 -p 80 --rand-source --flood 10.0.0.1
 ```
-HOW TO RUN LB + DDoS
-# Load balancing and DDoS detection SDN
 -----------------------------------------------------------------
-## How to run project:
+# How to run LB+DDoS :
 ### Step 1: Run topology:
 Open Terminal 1:
 ```bash
