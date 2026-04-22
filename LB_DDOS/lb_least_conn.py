@@ -28,6 +28,8 @@ SERVER_POOL = [
 ]
 
 RESULTS_FILE = '/tmp/lb_stats.json'
+COOKIE_LB   = 0x1
+COOKIE_DROP = 0x2
 
 
 class LeastConnLB(app_manager.RyuApp):
@@ -60,23 +62,68 @@ class LeastConnLB(app_manager.RyuApp):
         self.blocked_ips = set()
         self.req_counter = collections.defaultdict(int)
         self.REQ_THRESHOLD = 50
+        # self.req_counter = {}
+        self.req_time_window = {}
+        self.REQ_WINDOW = 10  # giây
     # ─────────────────────────────────────────────────────
     #  Helpers
     # ─────────────────────────────────────────────────────
 
     def add_flow(self, dp, priority, match, actions,
-                 idle_timeout=0, hard_timeout=0):
+              idle_timeout=0, hard_timeout=0, cookie=COOKIE_LB):  # ← thêm cookie=COOKIE_LB
         ofp    = dp.ofproto
         parser = dp.ofproto_parser
-        inst   = [parser.OFPInstructionActions(
-                      ofp.OFPIT_APPLY_ACTIONS, actions)]
+
+        inst = [parser.OFPInstructionActions(
+            ofp.OFPIT_APPLY_ACTIONS, actions)]
+
         mod = parser.OFPFlowMod(
-            datapath=dp, priority=priority,
-            match=match, instructions=inst,
+            datapath=dp,
+            cookie=cookie,          # ← THÊM DÒNG NÀY
+            priority=priority,
+            match=match,
+            instructions=inst,
             idle_timeout=idle_timeout,
-            hard_timeout=hard_timeout)
+            hard_timeout=hard_timeout,
+            flags=ofp.OFPFF_SEND_FLOW_REM
+        )
         dp.send_msg(mod)
 
+        
+    @set_ev_cls(ofp_event.EventOFPFlowRemoved, MAIN_DISPATCHER)
+    def flow_removed_handler(self, ev):
+        msg    = ev.msg
+        match  = msg.match
+        cookie = msg.cookie          # ← THÊM
+        src_ip = match.get('ipv4_src')
+
+        if not src_ip:
+            return
+
+        if cookie == COOKIE_DROP:
+            # Flow DROP hết hạn → unblock IP
+            self.blocked_ips.discard(src_ip)
+            self.req_counter.pop(src_ip, None)
+            self.req_time_window.pop(src_ip, None)
+            self._cleanup_sessions_by_ip(src_ip)
+            for dp in self.datapaths.values():
+                self._delete_stale_lb_flows(dp, src_ip)
+            self.logger.info(f"[DDOS] Unblocked {src_ip} — ready for LB again")
+
+        elif cookie == COOKIE_LB:
+            # Flow LB hết idle_timeout → dọn session
+            src_port = match.get('tcp_src')
+            if src_port:
+                session_key = (src_ip, src_port)
+                server = self.session_map.pop(session_key, None)
+                if server:
+                    ip = server['ip']
+                    self.conn_count[ip] = max(0, self.conn_count[ip] - 1)
+                    self.logger.info(
+                        f"[LC] Session expired {src_ip}:{src_port} | "
+                        f"{server['name']} conn={self.conn_count[ip]}")
+
+        self._save_stats()
     def send_pkt_out(self, dp, in_port, actions, data):
         ofp    = dp.ofproto
         parser = dp.ofproto_parser
@@ -214,7 +261,7 @@ class LeastConnLB(app_manager.RyuApp):
                 self.logger.info(
                     f"[LC] CLOSE {src_ip}:{src_port} | "
                     f"{server['name']} conn={self.conn_count[server['ip']]}")
-                self._save_stats()
+                self._save_stats()  
             return
 
         # ── SYN: new session → pick server Least Connection ──
@@ -345,18 +392,28 @@ class LeastConnLB(app_manager.RyuApp):
 
         now = time.time()
 
-        # ── Nếu đã block rồi ──
+        # ── Nếu đã block ──
         if src_ip in self.blocked_ips:
             return True
 
-        # ── Đếm số request từ IP này ──
+        # ── init window ──
+        if src_ip not in self.req_time_window:
+            self.req_time_window[src_ip] = now
+            self.req_counter[src_ip] = 0
+
+        # ── reset nếu hết window ──
+        if now - self.req_time_window[src_ip] > self.REQ_WINDOW:
+            self.req_time_window[src_ip] = now
+            self.req_counter[src_ip] = 0
+
+        # ── tăng request ──
         self.req_counter[src_ip] += 1
 
-        # ── Nếu chưa đủ threshold → bỏ qua AI ──
+        # ── chưa đủ threshold → bỏ qua AI ──
         if self.req_counter[src_ip] < self.REQ_THRESHOLD:
-            return False   # ← cực kỳ quan trọng
+            return False
 
-        # ── Đủ threshold → mới dùng AI ──
+        # ── đủ threshold → gọi ML ──
         is_attack = self.detector.is_attack(
             src_ip, src_port, dst_ip,
             dst_port, ip4_proto, tcp_flags
@@ -384,7 +441,16 @@ class LeastConnLB(app_manager.RyuApp):
             self.add_flow(dp, priority=200, match=match,
                         actions=[], hard_timeout=self.BLOCK_DURATION)
             self.logger.warning("[DDOS] DROP rule installed on port 80")
+    def _cleanup_sessions_by_ip(self, src_ip):
+        keys = [k for k in list(self.session_map.keys()) if k[0] == src_ip]
 
+        for k in keys:
+            server = self.session_map.pop(k, None)
+
+            if server:
+                ip = server['ip']
+                if self.conn_count.get(ip, 0) > 0:
+                    self.conn_count[ip] -= 1
     def _unblock_port(self, dp):
         """Xóa flow drop port 80"""
         parser = dp.ofproto_parser
@@ -407,7 +473,60 @@ class LeastConnLB(app_manager.RyuApp):
         self.logger.info("[DDOS] DROP rule removed from port 80")
     def _install_drop(self, dp, src_ip: str):
         parser = dp.ofproto_parser
-        match  = parser.OFPMatch(eth_type=0x0800, ipv4_src=src_ip)
-        self.add_flow(dp, priority=100, match=match,
-                      actions=[], hard_timeout=60)
-        self.logger.warning(f"[DDOS] DROP {src_ip}")
+        ofp    = dp.ofproto
+
+        match = parser.OFPMatch(
+            eth_type=0x0800,
+            ipv4_src=src_ip
+        )
+        inst = [parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, [])]
+
+        mod = parser.OFPFlowMod(
+            datapath=dp,
+            cookie=COOKIE_DROP,     # ← THÊM DÒNG NÀY
+            priority=100,
+            match=match,
+            instructions=inst,
+            idle_timeout=0,
+            hard_timeout=60,
+            flags=ofp.OFPFF_SEND_FLOW_REM
+        )
+        dp.send_msg(mod)
+        self.logger.warning(f"[DDOS] DROP installed for {src_ip} (60s)")
+    def _delete_stale_lb_flows(self, dp, src_ip: str):
+        """Xóa tất cả flow LB còn sót của src_ip trên switch"""
+        parser = dp.ofproto_parser
+        ofp    = dp.ofproto
+
+        # Xóa flow c2s (client→server)
+        match = parser.OFPMatch(
+            eth_type=0x0800,
+            ip_proto=6,
+            ipv4_src=src_ip
+        )
+        mod = parser.OFPFlowMod(
+            datapath=dp,
+            command=ofp.OFPFC_DELETE,
+            out_port=ofp.OFPP_ANY,
+            out_group=ofp.OFPG_ANY,
+            priority=10,
+            match=match
+        )
+        dp.send_msg(mod)
+
+        # Xóa flow s2c (server→client)
+        match2 = parser.OFPMatch(
+            eth_type=0x0800,
+            ip_proto=6,
+            ipv4_dst=src_ip
+        )
+        mod2 = parser.OFPFlowMod(
+            datapath=dp,
+            command=ofp.OFPFC_DELETE,
+            out_port=ofp.OFPP_ANY,
+            out_group=ofp.OFPG_ANY,
+            priority=10,
+            match=match2
+        )
+        dp.send_msg(mod2)
+        self.logger.info(f"[LC] Stale flows deleted for {src_ip}")
