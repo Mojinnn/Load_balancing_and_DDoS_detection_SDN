@@ -46,11 +46,11 @@ ryu-manager LB_DDOS/lb_least_conn.py
 Back to Terminal 1:
 ```bash
 mininet> h1 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.1 h1 &
-mininet> h2 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.1 h2 &
-mininet> h3 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.1 h3 &
-mininet> h4 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.1 h4 &
-mininet> h5 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.1 h5 &
-mininet> h6 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.1 h6 &
+mininet> h2 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.2 h2 &
+mininet> h3 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.3 h3 &
+mininet> h4 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.4 h4 &
+mininet> h5 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.5 h5 &
+mininet> h6 python3 /home/minhviet/Documents/SDN/model/LoadBalancing_DDoS/Benchmark/server.py 10.0.0.6 h6 &
 ```
 ### Step 4: Run benchmark:
 ``` bash
