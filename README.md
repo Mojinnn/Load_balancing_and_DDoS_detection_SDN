@@ -64,9 +64,13 @@ sudo chown -R minhviet:minhviet /home/minhviet/Documents/SDN/model/LoadBalancing
 ``` bash
 python3 visualize/plot_results.py <folder_name>
 ```
-### Step 7: Attack:
+### Step 7: DoS Attack :
 ``` bash
 c1 hping3 -S -p 80 --flood 10.0.0.100
+```
+### Step 8: DDoS Attack :
+``` bash
+c2 hping3 --rand-source -S -p 80 --flood 10.0.0.100
 ```
 
 
