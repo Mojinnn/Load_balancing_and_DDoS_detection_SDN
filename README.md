@@ -40,7 +40,7 @@ source name_of_env/bin/activate
 ```
 Then, run controller
 ```bash
-ryu-manager LB_DDOS/lb_least_conn.py
+ryu-manager LB_DDOS/lb_least_conn_version2.py
 ```
 ### Step 3: Run server:
 Back to Terminal 1:
